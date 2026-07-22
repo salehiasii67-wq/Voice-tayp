@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ژورنال صوتی — نسخه آزمایشی</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0B0F14; color: #E7EDF3; font-family: Tahoma, "Segoe UI", sans-serif; }
+  textarea, input { font-family: inherit; }
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: #22303F; border-radius: 4px; }
+  @keyframes pulseRing { 0% { transform: scale(0.9); opacity: 0.7; } 70% { transform: scale(1.6); opacity: 0; } 100% { transform: scale(1.6); opacity: 0; } }
+  @keyframes caretBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .spin { animation: spin 1s linear infinite; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useRef, useCallback, useEffect } = React;
+
+// ---------------------------------------------------------------------------
+// Punctuation command parser
+// ---------------------------------------------------------------------------
+const PUNCTUATION_RULES = [
+  { phrases: ['علامت سؤال'], replacement: '؟' },
+  { phrases: ['علامت سوال'], replacement: '؟' },
+  { phrases: ['علامت تعجب'], replacement: '!' },
+  { phrases: ['علامت نقل قول'], replacement: '"' },
+  { phrases: ['نقطه ویرگول'], replacement: '؛' },
+  { phrases: ['پاراگراف جدید'], replacement: '\n\n' },
+  { phrases: ['خط جدید'], replacement: '\n' },
+  { phrases: ['کروشه باز'], replacement: '[' },
+  { phrases: ['کروشه بسته'], replacement: ']' },
+  { phrases: ['پرانتز باز'], replacement: '(' },
+  { phrases: ['پرانتز بسته'], replacement: ')' },
+  { phrases: ['دو نقطه'], replacement: ':' },
+  { phrases: ['خط تیره'], replacement: '-' },
+  { phrases: ['اسلش'], replacement: '/' },
+  { phrases: ['ویرگول'], replacement: '،' },
+  { phrases: ['نقطه'], replacement: '.' },
+];
+
+function buildPhraseRegex(phrase) {
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('(^|\\s)(' + escaped + ')(?=\\s|$)', 'gu');
+}
+
+function parseVoiceCommands(text) {
+  let result = text;
+  for (const rule of PUNCTUATION_RULES) {
+    for (const phrase of rule.phrases) {
+      const regex = buildPhraseRegex(phrase);
+      result = result.replace(regex, () => rule.replacement);
+    }
+  }
+  return result
+    .split('\n')
+    .map((line) => line.replace(/[ \t]{2,}/g, ' ').trim())
+    .join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Action command registry
+// ---------------------------------------------------------------------------
+const ACTION_COMMANDS = [
+  { id: 'save-journal', phrases: ['ذخیره ژورنال'] },
+  { id: 'translate', phrases: ['ترجمه کن'] },
+  { id: 'clear-text', phrases: ['پاک کردن متن'] },
+  { id: 'stop-recording', phrases: ['توقف ضبط'] },
+];
+
+function matchActionCommand(utterance) {
+  const normalized = utterance.trim().replace(/[.!?؟،؛]+$/g, '').trim();
+  if (!normalized) return null;
+  for (const cmd of ACTION_COMMANDS) {
+    if (cmd.phrases.some((p) => p.trim() === normalized)) return cmd;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Demo translation — no backend exists in this standalone file, so this is a
+// clearly-labeled stand-in using a small dictionary. The real module calls a
+// secure backend route instead of doing anything client-side.
+// ---------------------------------------------------------------------------
+const DEMO_DICTIONARY = {
+  'بازار': 'the market', 'صعودی': 'bullish', 'نزولی': 'bearish', 'امروز': 'today',
+  'معامله': 'trade', 'سود': 'profit', 'ضرر': 'loss', 'ریسک': 'risk', 'روند': 'trend',
+  'تحلیل': 'analysis', 'حمایت': 'support', 'مقاومت': 'resistance', 'خرید': 'buy',
+  'فروش': 'sell', 'استراتژی': 'strategy', 'احساسات': 'emotions', 'بررسی': 'reviewed',
+  'کردم': 'did', 'من': 'I', 'بود': 'was', 'است': 'is',
+};
+
+function demoTranslate(persianText) {
+  const words = persianText.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  const knownCount = words.filter((w) => DEMO_DICTIONARY[w.replace(/[.،؟!؛:]/g, '')]).length;
+  const coverage = knownCount / words.length;
+  if (coverage < 0.15) {
+    return '[پیش‌نمایش ترجمه — سرویس واقعی به بک‌اند امن نیاز دارد]';
+  }
+  const translated = words
+    .map((w) => {
+      const clean = w.replace(/[.،؟!؛:]/g, '');
+      return DEMO_DICTIONARY[clean] || clean;
+    })
+    .join(' ');
+  return translated + ' (پیش‌نمایش — نه ترجمه دقیق)';
+}
+
+// ---------------------------------------------------------------------------
+// Speech recognition hook
+// ---------------------------------------------------------------------------
+function useSpeechRecognition(onFinalChunk) {
+  const [state, setState] = useState('idle');
+  const [finalText, setFinalText] = useState('');
+  const [interimText, setInterimText] = useState('');
+  const [error, setError] = useState(null);
+  const [isSupported, setIsSupported] = useState(true);
+  const [durationSeconds, setDurationSeconds] = useState(0);
+
+  const recognitionRef = useRef(null);
+  const explicitlyStoppedRef = useRef(true);
+  const durationStartRef = useRef(null);
+  const accumulatedDurationRef = useRef(0);
+  const onFinalChunkRef = useRef(onFinalChunk);
+  onFinalChunkRef.current = onFinalChunk;
+
+  useEffect(() => {
+    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    setIsSupported(!!Ctor);
+  }, []);
+
+  useEffect(() => {
+    if (state !== 'listening') return;
+    durationStartRef.current = Date.now();
+    const interval = setInterval(() => {
+      if (durationStartRef.current === null) return;
+      setDurationSeconds(accumulatedDurationRef.current + (Date.now() - durationStartRef.current) / 1000);
+    }, 500);
+    return () => {
+      clearInterval(interval);
+      if (durationStartRef.current !== null) {
+        accumulatedDurationRef.current += (Date.now() - durationStartRef.current) / 1000;
+        durationStartRef.current = null;
+      }
+    };
+  }, [state]);
+
+  const launchSession = useCallback(() => {
+    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Ctor) {
+      setError({ message: 'مرورگر شما از تشخیص گفتار پشتیبانی نمی‌کند. لطفاً از Chrome یا Edge استفاده کنید.' });
+      setState('error');
+      return;
+    }
+
+    const recognition = new Ctor();
+    recognition.lang = 'fa-IR';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => setState('listening');
+
+    recognition.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const alt = result[0];
+        if (!alt) continue;
+        if (result.isFinal) {
+          const parsed = parseVoiceCommands(alt.transcript);
+          const command = matchActionCommand(parsed);
+          if (command) {
+            onFinalChunkRef.current && onFinalChunkRef.current(null, command.id);
+          } else {
+            setFinalText((prev) => {
+              const needsSpace = prev.length > 0 && !prev.endsWith('\n') && parsed.length > 0;
+              return prev + (needsSpace ? ' ' : '') + parsed;
+            });
+            onFinalChunkRef.current && onFinalChunkRef.current(parsed, null);
+          }
+          setInterimText('');
+        } else {
+          setInterimText(alt.transcript);
+        }
+      }
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === 'no-speech') return;
+      const messages = {
+        'not-allowed': 'دسترسی به میکروفون رد شد. لطفاً مجوز میکروفون را در تنظیمات مرورگر فعال کنید.',
+        network: 'خطای شبکه در تشخیص گفتار.',
+      };
+      setError({ message: messages[event.error] || 'خطای ناشناخته در تشخیص گفتار.' });
+      setState('error');
+    };
+
+    recognition.onend = () => {
+      if (explicitlyStoppedRef.current) {
+        setState('idle');
+        return;
+      }
+      setState('processing');
+      try {
+        launchSession();
+      } catch (e) {
+        setState('error');
+      }
+    };
+
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch (e) {
+      // already running — ignore
+    }
+  }, []);
+
+  const start = useCallback(() => {
+    setError(null);
+    explicitlyStoppedRef.current = false;
+    launchSession();
+  }, [launchSession]);
+
+  const pause = useCallback(() => {
+    explicitlyStoppedRef.current = true;
+    if (recognitionRef.current) recognitionRef.current.stop();
+    setState('paused');
+  }, []);
+
+  const resume = useCallback(() => {
+    setError(null);
+    explicitlyStoppedRef.current = false;
+    launchSession();
+  }, [launchSession]);
+
+  const stop = useCallback(() => {
+    explicitlyStoppedRef.current = true;
+    if (recognitionRef.current) recognitionRef.current.stop();
+    setState('idle');
+  }, []);
+
+  const clear = useCallback(() => {
+    setFinalText('');
+    setInterimText('');
+    accumulatedDurationRef.current = 0;
+    setDurationSeconds(0);
+  }, []);
+
+  return { state, finalText, interimText, error, isSupported, durationSeconds, start, pause, resume, stop, clear };
+}
+
+function formatDuration(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = Math.floor(totalSeconds % 60);
+  return m + ':' + s.toString().padStart(2, '0');
+}
+
+const STATE_LABEL = { idle: 'آماده', listening: 'در حال شنیدن...', paused: 'مکث شده', processing: 'در حال پردازش...', error: 'خطا' };
+const STATE_COLOR = { idle: '#8CA0B3', listening: '#3DDC97', paused: '#F5A623', processing: '#F5A623', error: '#F0473C' };
+
+function VoiceJournalDemo() {
+  const [englishText, setEnglishText] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translatedUpTo, setTranslatedUpTo] = useState(0);
+  const containerRef = useRef(null);
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const speechRef = useRef(null);
+  const handleTranslateRef = useRef(null);
+
+  const handleFinalChunk = useCallback((text, actionId) => {
+    if (actionId === 'clear-text') {
+      speechRef.current.clear();
+      setEnglishText('');
+      setTranslatedUpTo(0);
+      return;
+    }
+    if (actionId === 'translate') {
+      handleTranslateRef.current();
+      return;
+    }
+    if (actionId === 'stop-recording') {
+      speechRef.current.stop();
+      return;
+    }
+  }, []);
+
+  const speech = useSpeechRecognition(handleFinalChunk);
+  speechRef.current = speech;
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || userScrolledUp) return;
+    el.scrollTop = el.scrollHeight;
+  }, [speech.finalText, speech.interimText, userScrolledUp]);
+
+  function handleScroll() {
+    const el = containerRef.current;
+    if (!el) return;
+    setUserScrolledUp(el.scrollHeight - el.scrollTop - el.clientHeight > 40);
+  }
+
+  function handleTranslate() {
+    const fullText = speech.finalText;
+    if (!fullText.trim() || fullText.length <= translatedUpTo) return;
+    setIsTranslating(true);
+    const newSegment = fullText.slice(translatedUpTo).trim();
+    setTimeout(() => {
+      const translated = demoTranslate(newSegment);
+      setEnglishText((prev) => (prev ? prev + ' ' + translated : translated));
+      setTranslatedUpTo(fullText.length);
+      setIsTranslating(false);
+    }, 500);
+  }
+  handleTranslateRef.current = handleTranslate;
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      // clipboard unavailable — text remains selectable
+    }
+  }
+
+  const isListening = speech.state === 'listening';
+  const isPaused = speech.state === 'paused';
+  const isIdle = speech.state === 'idle';
+  const hasContent = speech.finalText.length > 0;
+
+  return (
+    <div style={{ minHeight: '100vh' }}>
+      <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 16px', direction: 'rtl' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(61,220,151,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3DDC97', fontSize: 18 }}>
+            🎙
+          </div>
+          <div>
+            <h1 style={{ fontSize: 17, fontWeight: 600, margin: 0 }}>ژورنال صوتی — نسخه آزمایشی</h1>
+            <p style={{ fontSize: 12, color: '#54687C', margin: '2px 0 0' }}>تست تایپ صوتی فارسی و ترجمه</p>
+          </div>
+        </div>
+
+        <div style={{ background: 'rgba(245,166,35,0.1)', border: '1px solid rgba(245,166,35,0.3)', borderRadius: 10, padding: '10px 12px', marginBottom: 16, fontSize: 12.5, color: '#F5A623', lineHeight: 1.7 }}>
+          این یک نسخه آزمایشی برای تست منطق است. ترجمه با یک دیکشنری نمایشی کوچک کار می‌کند، نه یک سرویس ترجمه واقعی. این فایل مستقیم توی مرورگر و گیت‌هاب پیجز کار می‌کند — نیازی به build ندارد.
+        </div>
+
+        {!speech.isSupported && (
+          <div style={{ display: 'flex', gap: 8, background: 'rgba(240,71,60,0.1)', border: '1px solid rgba(240,71,60,0.3)', borderRadius: 10, padding: '10px 12px', marginBottom: 16, fontSize: 13, color: '#F0473C' }}>
+            <span>⚠</span>
+            <span>مرورگر شما از تشخیص گفتار پشتیبانی نمی‌کند. لطفاً از Chrome یا Edge استفاده کنید.</span>
+          </div>
+        )}
+        {speech.error && (
+          <div style={{ display: 'flex', gap: 8, background: 'rgba(240,71,60,0.1)', border: '1px solid rgba(240,71,60,0.3)', borderRadius: 10, padding: '10px 12px', marginBottom: 16, fontSize: 13, color: '#F0473C' }}>
+            <span>⚠</span>
+            <span>{speech.error.message}</span>
+          </div>
+        )}
+
+        <div style={{ border: '1px solid #22303F', background: '#111823', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button
+                onClick={isIdle ? speech.start : speech.stop}
+                aria-label={isIdle ? 'شروع ضبط' : 'توقف ضبط'}
+                style={{
+                  position: 'relative', width: 52, height: 52, borderRadius: '50%', border: 'none', cursor: 'pointer',
+                  background: isListening ? 'rgba(240,71,60,0.15)' : 'rgba(61,220,151,0.15)',
+                  color: isListening ? '#F0473C' : '#3DDC97',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
+                }}
+              >
+                {isListening && (
+                  <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'rgba(61,220,151,0.4)', animation: 'pulseRing 1.8s cubic-bezier(0.4,0,0.6,1) infinite' }} />
+                )}
+                {isIdle ? '🎙' : '⏹'}
+              </button>
+              <button
+                onClick={isPaused ? speech.resume : speech.pause}
+                disabled={isIdle}
+                aria-label={isPaused ? 'ادامه ضبط' : 'مکث ضبط'}
+                style={{ width: 42, height: 42, borderRadius: '50%', border: 'none', cursor: isIdle ? 'default' : 'pointer', background: '#161F2C', color: '#8CA0B3', opacity: isIdle ? 0.3 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}
+              >
+                {isPaused ? '▶' : '⏸'}
+              </button>
+              <button
+                onClick={() => { speech.clear(); setEnglishText(''); setTranslatedUpTo(0); }}
+                aria-label="پاک کردن متن"
+                style={{ width: 42, height: 42, borderRadius: '50%', border: 'none', cursor: 'pointer', background: '#161F2C', color: '#8CA0B3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}
+              >
+                🗑
+              </button>
+            </div>
+            <div style={{ fontFamily: 'monospace', fontSize: 13, color: '#8CA0B3', direction: 'ltr' }}>
+              {formatDuration(speech.durationSeconds)}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: STATE_COLOR[speech.state] }} />
+            <span style={{ color: STATE_COLOR[speech.state] }}>{STATE_LABEL[speech.state]}</span>
+          </div>
+        </div>
+
+        <div
+          ref={containerRef}
+          onScroll={handleScroll}
+          dir="rtl"
+          style={{ height: 180, overflowY: 'auto', border: '1px solid #22303F', background: '#111823', borderRadius: 12, padding: 14, marginBottom: 16, fontSize: 16, lineHeight: 1.9 }}
+        >
+          {!speech.finalText && !speech.interimText ? (
+            <p style={{ color: '#54687C', margin: 0 }}>برای شروع، روی دکمه میکروفون بزنید و شروع به صحبت کنید...</p>
+          ) : (
+            <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
+              {speech.finalText}
+              {speech.interimText && (
+                <span style={{ color: '#8CA0B3' }}>{speech.finalText ? ' ' : ''}{speech.interimText}</span>
+              )}
+              {isListening && (
+                <span style={{ display: 'inline-block', width: 2, height: 18, background: '#3DDC97', marginRight: 2, verticalAlign: 'text-bottom', animation: 'caretBlink 1s step-end infinite' }} />
+              )}
+            </p>
+          )}
+        </div>
+
+        <div style={{ border: '1px solid #22303F', background: '#111823', borderRadius: 12, marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid #22303F' }}>
+            <span style={{ fontSize: 12, color: '#54687C', textTransform: 'uppercase', letterSpacing: 0.5 }}>ترجمه انگلیسی</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => copyText(englishText)}
+                disabled={!englishText}
+                aria-label="کپی ترجمه"
+                style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', color: '#8CA0B3', cursor: englishText ? 'pointer' : 'default', opacity: englishText ? 1 : 0.3, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                ⧉
+              </button>
+              <button
+                onClick={handleTranslate}
+                disabled={isTranslating || !hasContent}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, borderRadius: 8, border: 'none', background: 'rgba(61,220,151,0.15)', color: '#3DDC97', fontSize: 12, fontWeight: 500, padding: '6px 12px', cursor: hasContent ? 'pointer' : 'default', opacity: hasContent ? 1 : 0.4 }}
+              >
+                <span className={isTranslating ? 'spin' : ''} style={{ display: 'inline-block' }}>{isTranslating ? '⟳' : '🌐'}</span>
+                ترجمه به انگلیسی
+              </button>
+            </div>
+          </div>
+          <div dir="ltr" style={{ padding: 14, minHeight: 80, fontSize: 15, lineHeight: 1.8 }}>
+            {englishText || <span style={{ color: '#54687C' }}>Translation will appear here...</span>}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#54687C' }}>
+          <span>کلمات: {speech.finalText.trim() ? speech.finalText.trim().split(/\s+/).length : 0}</span>
+          <span>نویسه‌ها: {speech.finalText.trim().length}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<VoiceJournalDemo />);
+</script>
+</body>
+</html>
