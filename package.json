@@ -1,0 +1,18 @@
+{
+  "name": "sedanegar-voice-typing",
+  "version": "1.0.0",
+  "description": "Persian live voice typing app",
+  "private": true,
+  "scripts": {
+    "build": "echo 'static app, nothing to build'"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/android": "^6.1.2",
+    "@capacitor-community/speech-recognition": "^6.1.0",
+    "@capacitor/clipboard": "^6.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  }
+}

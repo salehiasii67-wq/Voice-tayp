@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>صدانگار — تایپ زنده فارسی</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --bg: #0B0C10;
+    --bg-raised: #14161C;
+    --bg-panel: #191B22;
+    --line: #262A33;
+    --ivory: #F2EFE9;
+    --ivory-dim: #A8A9AA;
+    --ivory-faint: #66686F;
+    --amber: #E8A33D;
+    --amber-dim: #4A3A1E;
+    --teal: #5FA8A0;
+    --teal-dim: #1C3532;
+    --red: #D95D5D;
+    --red-dim: #3A1F1F;
+    --radius: 18px;
+  }
+  *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html,body{ margin:0; padding:0; height:100%; background: var(--bg); color: var(--ivory);
+    font-family: 'Vazirmatn', sans-serif; -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
+  body{ display:flex; flex-direction:column; min-height: 100vh; min-height: 100dvh; }
+
+  .stage-glow{ position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(232,163,61,0.06), transparent 60%),
+                radial-gradient(ellipse 50% 30% at 50% 100%, rgba(95,168,160,0.05), transparent 60%);
+    z-index: 0; }
+
+  header{ position: relative; z-index: 1; display:flex; align-items:center; justify-content:space-between;
+    padding: calc(14px + env(safe-area-inset-top)) 18px 10px; flex-shrink: 0; }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand-mark{ width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(155deg, var(--amber), #c97e1f);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+    box-shadow: 0 2px 10px rgba(232,163,61,0.25); }
+  .brand-mark svg{ width:16px; height:16px; }
+  .brand-text{ display:flex; flex-direction:column; line-height:1.15; }
+  .brand-title{ font-weight:800; font-size:15px; }
+  .brand-sub{ font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--ivory-faint); letter-spacing:0.5px; text-transform:uppercase; }
+
+  .status-chip{ display:flex; align-items:center; gap:7px; font-family:'JetBrains Mono',monospace; font-size:10px;
+    letter-spacing:0.5px; text-transform:uppercase; padding:6px 11px; border-radius:999px;
+    background: var(--bg-raised); border:1px solid var(--line); color: var(--ivory-dim); transition: all .25s ease; }
+  .status-dot{ width:7px; height:7px; border-radius:50%; background: var(--ivory-faint); transition: all .25s ease; }
+  .status-chip.listening{ border-color: rgba(232,163,61,0.4); color: var(--amber); background: var(--amber-dim); }
+  .status-chip.listening .status-dot{ background: var(--amber); animation: dotpulse 1.4s ease-out infinite; }
+  .status-chip.error{ border-color: rgba(217,93,93,0.4); color: var(--red); background: var(--red-dim); }
+  .status-chip.error .status-dot{ background: var(--red); }
+  .status-chip.paused{ border-color: rgba(255,255,255,0.15); color: var(--ivory-dim); }
+  @keyframes dotpulse{ 0%{ box-shadow: 0 0 0 0 rgba(232,163,61,0.55); } 70%{ box-shadow: 0 0 0 8px rgba(232,163,61,0); } 100%{ box-shadow: 0 0 0 0 rgba(232,163,61,0); } }
+
+  main{ position: relative; z-index: 1; flex: 1; display:flex; flex-direction:column;
+    padding: 6px 16px 0; width:100%; margin: 0 auto; min-height: 0; max-width: 720px; }
+
+  .transcript-wrap{ flex:1; min-height: 0; background: var(--bg-panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 22px 20px 16px; display:flex; flex-direction:column;
+    position: relative; overflow:hidden; }
+
+  .transcript-scroll{ flex:1; overflow-y:auto; }
+  #transcript{ font-size: clamp(18px, 5vw, 24px); line-height: 1.9; font-weight: 500;
+    white-space: pre-wrap; word-break: break-word; }
+  #transcript .final-seg{ color: var(--ivory); }
+  #transcript .interim-seg{ color: var(--amber); opacity: 0.85; }
+
+  .placeholder{ color: var(--ivory-faint); font-size: 15px; }
+
+  .baseline{ height: 30px; margin-top: 6px; display:flex; align-items:flex-end; gap:3px;
+    flex-shrink:0; opacity: 0.35; transition: opacity .3s ease; }
+  .baseline.active{ opacity: 1; }
+  .baseline span{ flex:1; max-width: 3px; background: linear-gradient(180deg, var(--amber), transparent);
+    border-radius: 2px; height: 4px; transition: height .12s ease; }
+
+  .translate-panel{ margin-top: 12px; background: var(--bg-panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 16px 20px; flex-shrink: 0; max-height: 0; opacity: 0;
+    overflow:hidden; transition: max-height .35s ease, opacity .3s ease, padding .35s ease; }
+  .translate-panel.open{ max-height: 200px; opacity: 1; }
+  .translate-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px; }
+  .translate-label{ font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:1px; text-transform:uppercase;
+    color: var(--teal); display:flex; align-items:center; gap:6px; }
+  .translate-label::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--teal); }
+  .icon-btn-sm{ background:none; border:none; color:var(--ivory-faint); cursor:pointer; padding:4px; border-radius:6px;
+    display:flex; align-items:center; justify-content:center; }
+  #translation{ direction: ltr; text-align: left; font-family:'Inter', sans-serif; font-size: 15px;
+    line-height: 1.7; color: var(--ivory-dim); max-height: 140px; overflow-y: auto; }
+  #translation.loading{ color: var(--ivory-faint); font-style: italic; }
+
+  .meta-row{ display:flex; justify-content: space-between; align-items:center; padding: 10px 4px 4px; flex-shrink:0; }
+  .meta-stats{ font-family:'JetBrains Mono',monospace; font-size: 10px; color: var(--ivory-faint); display:flex; gap: 12px; }
+  .meta-stats b{ color: var(--ivory-dim); font-weight:500; }
+
+  .punct-toolbar{ display:flex; gap:6px; flex-wrap:wrap; padding: 10px 2px 4px; flex-shrink: 0; }
+  .punct-btn{ font-family:'JetBrains Mono',monospace; font-size: 14px; min-width: 34px; height: 34px; padding: 0 7px;
+    border-radius: 10px; background: var(--bg-raised); border: 1px solid var(--line); color: var(--ivory-dim);
+    display:flex; align-items:center; justify-content:center; }
+  .punct-btn:active{ transform: scale(0.92); background: var(--bg-panel); }
+
+  .deck-wrap{ position: sticky; bottom: 0; z-index: 2; padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+    background: linear-gradient(0deg, var(--bg) 55%, transparent); flex-shrink:0; }
+  .deck{ max-width: 720px; margin: 0 auto; display:flex; align-items:center; justify-content:center; gap: 8px;
+    background: var(--bg-raised); border: 1px solid var(--line); border-radius: 999px; padding: 9px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.45); }
+  .deck-btn{ display:flex; align-items:center; justify-content:center; border:none; background: transparent;
+    color: var(--ivory-dim); border-radius: 999px; flex-shrink:0; }
+  .deck-btn svg{ width:18px; height:18px; }
+  .deck-btn:active{ transform: scale(0.92); background: rgba(255,255,255,0.08); }
+  .deck-btn.sm{ width:42px; height:42px; }
+  .mic-btn{ width: 58px; height: 58px; background: var(--amber); color: #1a1408; box-shadow: 0 4px 18px rgba(232,163,61,0.35); }
+  .mic-btn.listening{ background: var(--red); color:#fff; animation: micpulse 1.6s ease-out infinite; }
+  @keyframes micpulse{ 0%{ box-shadow: 0 0 0 0 rgba(217,93,93,0.45); } 70%{ box-shadow: 0 0 0 14px rgba(217,93,93,0); } 100%{ box-shadow: 0 0 0 0 rgba(217,93,93,0); } }
+  .deck-btn:disabled{ opacity:0.3; }
+  .deck-divider{ width:1px; height:24px; background: var(--line); flex-shrink:0; }
+
+  .toast{ position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 50%;
+    transform: translateX(-50%) translateY(-140%); background: var(--bg-raised); border: 1px solid var(--line);
+    color: var(--ivory); padding: 10px 16px; border-radius: 12px; font-size: 13px; z-index: 50;
+    transition: transform .3s cubic-bezier(.34,1.56,.64,1); box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    max-width: 88vw; text-align:center; }
+  .toast.show{ transform: translateX(-50%) translateY(0); }
+  .toast.error{ border-color: rgba(217,93,93,0.4); color: var(--red); }
+
+  .empty-state{ display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+    height:100%; gap: 10px; color: var(--ivory-faint); }
+  .empty-state svg{ width:34px; height:34px; opacity:0.4; margin-bottom:4px; }
+  .empty-state .empty-title{ font-size:15px; color: var(--ivory-dim); font-weight:600; }
+  .empty-state .empty-sub{ font-size:12px; max-width: 280px; line-height:1.6; }
+</style>
+</head>
+<body>
+
+<div class="stage-glow"></div>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z" fill="#1a1408"/><path d="M19 11a7 7 0 01-14 0M12 18v3" stroke="#1a1408" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </div>
+    <div class="brand-text">
+      <span class="brand-title">صدانگار</span>
+      <span class="brand-sub">Live Persian Typing</span>
+    </div>
+  </div>
+  <div class="status-chip" id="statusChip">
+    <span class="status-dot"></span>
+    <span id="statusText">آماده</span>
+  </div>
+</header>
+
+<main>
+  <div class="transcript-wrap">
+    <div class="transcript-scroll" id="transcriptScroll">
+      <div id="transcript"></div>
+      <div class="empty-state" id="emptyState">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z"/><path d="M19 11a7 7 0 01-14 0M12 18v4M8 22h8"/></svg>
+        <div class="empty-title">برای شروع، دکمه میکروفون را بزنید</div>
+        <div class="empty-sub">با گفتن «نقطه»، «ویرگول» یا «علامت سوال» می‌توانید نشانه‌گذاری را هم با صدا انجام دهید</div>
+      </div>
+    </div>
+    <div class="baseline" id="baseline"></div>
+  </div>
+
+  <div class="punct-toolbar" id="punctToolbar">
+    <button class="punct-btn" data-insert=".">.</button>
+    <button class="punct-btn" data-insert="،">،</button>
+    <button class="punct-btn" data-insert="؟">؟</button>
+    <button class="punct-btn" data-insert="!">!</button>
+    <button class="punct-btn" data-insert=":">:</button>
+    <button class="punct-btn" data-insert=";">;</button>
+    <button class="punct-btn" data-insert="(">(</button>
+    <button class="punct-btn" data-insert=")">)</button>
+    <button class="punct-btn" data-insert="-">-</button>
+    <button class="punct-btn" data-insert="/">/</button>
+    <button class="punct-btn" data-insert="\n" title="خط جدید">↵</button>
+  </div>
+
+  <div class="translate-panel" id="translatePanel">
+    <div class="translate-header">
+      <span class="translate-label">English Translation</span>
+      <button class="icon-btn-sm" id="copyTranslationBtn" title="کپی ترجمه">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V4a2 2 0 012-2h10"/></svg>
+      </button>
+    </div>
+    <div id="translation"></div>
+  </div>
+
+  <div class="meta-row">
+    <div class="meta-stats">
+      <span><b id="wordCount">0</b> کلمه</span>
+      <span><b id="charCount">0</b> نویسه</span>
+    </div>
+    <div class="meta-stats"><span id="durationLabel">۰۰:۰۰</span></div>
+  </div>
+</main>
+
+<div class="deck-wrap">
+  <div class="deck">
+    <button class="deck-btn sm" id="clearBtn" title="پاک کردن">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg>
+    </button>
+    <button class="deck-btn sm" id="pauseBtn" title="مکث" disabled>
+      <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+    </button>
+    <button class="deck-btn mic-btn" id="micBtn" title="شروع ضبط">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z" fill="currentColor"/><path d="M19 11a7 7 0 01-14 0M12 18v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+    <button class="deck-btn sm" id="stopBtn" title="توقف کامل" disabled>
+      <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+    </button>
+    <div class="deck-divider"></div>
+    <button class="deck-btn sm" id="translateBtn" title="ترجمه به انگلیسی">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h7M9 3v2m0 0c0 4-2 8-6 10m3-4c1.5 1.5 3.5 2.5 6 3M14 21l4-9 4 9m-7-3h6"/></svg>
+    </button>
+    <button class="deck-btn sm" id="copyBtn" title="کپی متن">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V4a2 2 0 012-2h10"/></svg>
+    </button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="capacitor.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

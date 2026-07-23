@@ -1,0 +1,14 @@
+{
+  "appId": "com.mehra.sedanegar",
+  "appName": "صدانگار",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": true
+  },
+  "plugins": {
+    "SpeechRecognition": {
+      "androidSpeechRecognitionServicePackage": ""
+    }
+  }
+}
